@@ -1,5 +1,4 @@
 import socket, sys, threading, socketserver, datetime, platform, os, hashlib
-from threading import Thread
 
 class Client(object):
 	def __init__(self, device_id, device_passw, device_mac, device_ip, device_port):
@@ -10,47 +9,48 @@ class Client(object):
 		self.port = device_port
 		self.auth = False
 
-
 	def updateIP(new_ip):
 		self.ip = new_ip
 
-my_ip = socket.gethostbyname(socket.gethostname())
 clients = []
 activityLog = 'Activity.log'
 errorLog = 'Error.log'
 log = open(activityLog, 'a')
 error = open(errorLog, 'a')
 
-# function: start listener
+# Starts TCP/UDP Listeners
 def start_listener():
-	# start thread for listener
+
+	t1 = threading.Thread(target=TCP_listener)
+	t1.daemon=True
+	t1.start()
 	t2 = threading.Thread(target=UDP_listener)
 	t2.daemon=True
 	t2.start()
 
-# function: receiver (listener)
+# Self explanatory
 def UDP_listener():
-
- 	# global variables
-	global my_ip, my_port
-
-	# set socket for listener
-	server = socketserver.UDPServer((my_ip, int(my_port)), MyUDPHandler)
+	global ip, port
+	server = socketserver.UDPServer((ip, int(port)), MyUDPHandler)
 	server.serve_forever()
 
-# Class: MyUDPHandler (this receives all UDP messages) also parses them
+# Self explanatory
+def TCP_listener():
+	global ip, port
+
+	# set socket for listener
+	server = socketserver.TCPServer((ip, int(port)), MyTCPHandler)
+	server.serve_forever()
+
+# Handles all incoming UDP Messages 
 class MyUDPHandler(socketserver.BaseRequestHandler):
 
-	# interrupt handler for incoming messages
 	def handle(self):
 
 		data = self.request[0].strip()
-		#ip = '127.0.0.1'
-		#port = '9997'
-		# set message and split
 		message = data.decode().split('\t')
-		#print('A message was recieved: '+str(message))
 		toLog('Message: ' + str(message) + ' was recieved.')
+		
 		if message[0] == 'REG':
 			register(message[1], message[2], message[3], message[4], message[5], data)
 		elif message[0] == 'DER':
@@ -62,7 +62,30 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 		elif message[0] == 'DAT': 
 			storeData(message[0], message[1], message[2], message[3], message[4], data)
 		else:			
-			toError(message)
+			toError(str(message))
+
+# Handles all incomping TCP Messages
+class MyTCPHandler(socketserver.BaseRequestHandler):
+
+	def handle(self):
+		global port
+		client_ip = self.client_address[0]
+		data = self.request.recv(1024)
+		message = data.decode().split('\t')
+		toLog('Server Message: ' + str(message) + ' was recieved.')
+
+		if message[0] == 'REG':
+			register(message[1], message[2], message[3], client_ip, port, str(message))
+		elif message[0] == 'DER':
+			deregister(message[1], message[2], message[3], client, port, str(message))
+		elif message[0] == 'LIN':
+			login(message[1], message[2], message[3], message[4], str(message))
+		elif message[0] == 'LOF':
+			logoff(message[1], str(message))
+		elif message[0] == 'DAT': 
+			storeData(message[0], message[1], message[2], message[3], message[4], str(message))
+		else:			
+			toError('Server: ' + str(message))
 
 #Performs integrity checks then registers client
 def register(dev_id, passw, mac, ip, port, message):
@@ -70,30 +93,26 @@ def register(dev_id, passw, mac, ip, port, message):
 		#Already registered
 		if (dev_id == client.id and passw == client.passw and mac == client.mac and port == client.port):
 			if ip == client.ip:
-				#print('Client already registered.')
 				toLog('Client already registered.')
-				sendAck('01',dev_id, ip, port, message)
+				send_tcp('01',dev_id, ip, port, message)
 				return 0
 			else:
-				#print('Client already registered, just updated its IP.')
 				toLog('Client already registered, just updated its IP.')
 				client.updateIP(ip)
-				sendAck('02',dev_id, ip, port, messsage)
+				send_tcp('02',dev_id, ip, port, messsage)
 				return 0
 		#IP already registered
 		elif ip == client.ip:
-			#print('IP is already registered to another device.')
 			toLog('IP is already registered to another device.')
-			sendAck('12',dev_id, ip, port, message)
+			send_tcp('12',dev_id, ip, port, message)
 			return 0
 		#MAC already registered
 		elif mac == client.mac:
-			#print('MAC address is already registered to another device.')
 			toLog('MAC address is already registered to another device.')
-			sendAck('20',dev_id, ip, port, message)
+			send_tcp('20',dev_id, ip, port, message)
 			return 0
 	clients.append(Client(dev_id, passw, mac, ip, port))
-	sendAck('00', dev_id, ip, port, message)
+	send_tcp('00', dev_id, ip, port, message)
 	toLog('Device was successfully registered from message: ' + str(message))
 
 #Performs integrity checks then deregisters client
@@ -101,14 +120,14 @@ def deregister(dev_id, passw, mac, ip, port, message):
 	for client in clients:
 		if (dev_id == client.id and passw == client.passw and mac == client.mac and port == client.port):
 			clients.remove(client)
-			sendAck('20', dev_id, ip, port, message)
+			send_tcp('20', dev_id, ip, port, message)
 			toLog('Device was successfully deregistered from message: ' + str(message))
 			return 0
 		elif (dev_id == client.id or mac == client.mac or port == client.port):
-			sendAck('30', dev_id, ip, port, message)
+			send_tcp('30', dev_id, ip, port, message)
 			toLog('An device attempted to deregister with the wrong information: ' + str(message))
 
-	sendAck('21', dev_id, ip, port, message)
+	send_tcp('21', dev_id, ip, port, message)
 	toLog('An unregistered device attempted to deregister: ' + str(message))
 	return 0
 
@@ -117,10 +136,10 @@ def login(dev_id, passw, ip, port, message):
 	for client in clients:
 		if (dev_id == client.id and passw == client.passw and ip == client.ip  and port == client.port):
 			client.auth = True
-			sendAck('70', dev_id, ip, port, message)
+			send_tcp('70', dev_id, ip, port, message)
 			return 0
 
-	sendAck('31', dev_id, ip, port, message)
+	send_tcp('31', dev_id, ip, port, message)
 	return 0
 
 #Handles client logoffs from the server
@@ -128,17 +147,27 @@ def logoff(dev_id, message):
 	for client in clients:
 		if (dev_id == client.id):
 			client.auth = False
-			sendAck('80',dev_id, client.ip, client.port, message)
+			send_tcp('80',dev_id, client.ip, client.port, message)
 			return 0
 
 	#sendAck('31', dev_id, ip, port, message)
 	toLog('An unauthorized device attempted to logoff another device: ' + str(message))
 	return 0
 
-#Sends ACK Codes back to the clients
-def sendAck(code, dev_id, dest_ip, dest_port, message):
+#Sends UDP ACKS
+def send_udp(code, dev_id, dest_ip, dest_port, message):
 	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
 	sock.sendto(('ACK\t' + code + '\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(message).hexdigest())).encode(), (dest_ip, int(dest_port)))
+
+#Sends TCP ACKS
+def send_tcp(code, dev_id, dest_ip, dest_port, message):
+	try:
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((dest_ip, int(dest_port)))
+		s.send(('ACK\t' + code + '\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(message.encode()).hexdigest())).encode())
+		s.close()
+	except ConnectionRefusedError:
+		toError('TCP Socket couldn\'t connect to: ' + str(dest_ip) + ':' + str(dest_port))
 
 #Sends a query packet to a specific client
 def sendQue():
@@ -159,10 +188,10 @@ def storeData(code, dev_id, time, length, data, message):
 	for client in clients:
 		if (dev_id == client.id):
 			toLog('Stored the message: ' + str(data))
-			sendAck('50', dev_id, client.ip, client.port, message)
+			send_tcp('50', dev_id, client.ip, client.port, message)
 			return 0
 	toLog('Rejected the message(device not registered): ' + str(data))
-	sendAck('51', dev_id, ip, port, message)
+	send_tcp('51', dev_id, ip, port, message)
 
 #Shows list of registerd clients
 def show():
@@ -187,18 +216,23 @@ def toError(message):
 #Starts listener and serves the menu
 def main():
 	
-	global my_port
-	if len(sys.argv) != 2:
+	global port
+	global ip
+	if len(sys.argv) < 2:
 		print("Usage: <program_file><port>")
 		exit(1)
-	my_port = sys.argv[1]
-	
+	port = sys.argv[1]
+	try:
+		if sys.argv[2] == 'test':
+			ip = '127.0.0.1'
+	except:
+		ip = socket.gethostbyname(socket.gethostname())
 	start_listener()
 	
 	run = 1
 	while(run):
 
-		os.system('cls') if platform.system() is 'Windows' else os.system('clear')
+		#os.system('cls') if platform.system() is 'Windows' else os.system('clear')
 		print("Enter 'show' to show all registered devices.")
 		print("Enter 'query' to send data query to the client")
 		print("Enter 'quit' to end program")

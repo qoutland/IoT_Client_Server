@@ -1,14 +1,10 @@
 import socket, sys, threading, socketserver, uuid, datetime, time, platform, os, hashlib
-from threading import Thread
 
 mac = ':'.join(['{:02x}'.format((uuid.getnode() >> ele) & 0xff) for ele in range(0,8*6,8)][::-1])
 port = 9997
-dev_id = 'dev1'
 activityLog = 'Activity.log'
 errorLog = 'Error.log'
 passphrase = 'password'
-
-#Flags are used to wait for an ACK
 registered = False
 loggedIn = False
 regFlag = 0
@@ -22,34 +18,71 @@ logoffHash = hashlib.md5()
 dataFlag = 0
 dataHash = hashlib.md5()
 
-# function: start listener
+# Starts TCP/UDP Listeners
 def start_listener():
-	# start thread for listener
+
+	t1 = threading.Thread(target=TCP_listener)
+	t1.daemon=True
+	t1.start()
 	t2 = threading.Thread(target=UDP_listener)
 	t2.daemon=True
 	t2.start()
 
-# function: receiver (listener)
+# Self explanatory
 def UDP_listener():
-
-	# set socket for listener
+	global ip, port
 	server = socketserver.UDPServer((ip, int(port)), MyUDPHandler)
 	server.serve_forever()
 
-# Class: MyUDPHandler (this receives all UDP messages)
-class MyUDPHandler(socketserver.BaseRequestHandler):
+# Self explanatory
+def TCP_listener():
+	global ip, port
 
-	# interrupt handler for incoming messages
+	# set socket for listener
+	server = socketserver.TCPServer((ip, int(port)), MyTCPHandler)
+	server.serve_forever()
+
+# Recieves all TCP Messages
+class MyTCPHandler(socketserver.BaseRequestHandler):
+
 	def handle(self):
 		global registered
 		global loggedIn
-		# parse received data
-		data = self.request[0].strip()
 
-		# set message and split
+		data = self.request.recv(1024)
+		message = data.decode().split('\t')
+		toLog('Client Message: ' + str(message) + ' was recieved.')
+
+		if message[0] == 'ACK':
+			if str(regHash) == str(message[4]):
+				verifyReg(message)
+			elif str(deregHash) == str(message[4]):
+				verifyDereg(message)
+			elif str(loginHash) == str(message[4]):
+				verifyLogin(message)
+			elif str(logoffHash) == str(message[4]):
+				verifyLogoff(message)
+			elif str(dataHash) == str(message[4]):
+				verifyData(message)
+			else:
+				toLog('Bad hash: ' + str(message[4]))
+		elif message[0] == 'QUE':
+			handleQuery(message)
+		else:			
+			toError(message)
+
+# Recieves all UDP Messsages
+class MyUDPHandler(socketserver.BaseRequestHandler):
+
+	def handle(self):
+		global registered
+		global loggedIn
+
+		data = self.request[0].strip()
 		message = data
 		message = message.decode().split('\t')
 		toLog('Message: ' + str(message) + ' was recieved.')
+
 		if message[0] == 'ACK':
 			if str(regHash) == str(message[4]):
 				verifyReg(message)
@@ -69,16 +102,28 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 			toError(message)
 
 #Sends packets to the server
-def send_packet(message):
-		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
-		sock.sendto(message.encode(), (server_ip, int(server_port)))
+def send_udp(message):
+	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
+	sock.sendto(message.encode(), (server_ip, int(server_port)))
+
+#Sends packets to the server
+def send_tcp(message):
+	try:
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((server_ip, int(server_port)))
+		s.send(message.encode())
+		s.close()
+	except ConnectionRefusedError:
+		toError('TCP Socket couldn\'t connect to: ' + str(server_ip) + ':' + str(server_port))
 
 #Used to register a device to the server 
 def register():
 	global regFlag
 	global regHash
-	mssg = 'REG\t' + dev_id + '\t' + passphrase + '\t' + str(mac) + '\t' + ip + '\t' + str(port)
-	send_packet(mssg)
+	#UDP #mssg = 'REG\t' + dev_id + '\t' + passphrase + '\t' + str(mac) + '\t' + ip + '\t' + str(port)
+	#UDP #send_udp(mssg)
+	mssg = 'REG\t' + dev_id + '\t' + passphrase + '\t' + str(mac)
+	send_tcp(mssg)
 	regFlag = 1
 	regHash = hashlib.md5(mssg.encode()).hexdigest()
 	toLog('Sending register packet to: ' + str(server_ip)+ ':' + str(server_port))
@@ -110,8 +155,9 @@ def verifyReg(message):
 def deregister():
 	global deregFlag
 	global deregHash
-	mssg = 'DER\t' + dev_id + '\t' + passphrase + '\t' + str(mac) + '\t' + ip + '\t' + str(port)
-	send_packet(mssg)
+	#mssg = 'DER\t' + dev_id + '\t' + passphrase + '\t' + str(mac) + '\t' + ip + '\t' + str(port)
+	mssg = 'DER\t' + dev_id + '\t' + passphrase + '\t' + str(mac)
+	send_tcp(mssg)
 	deregFlag = 1
 	deregHash = hashlib.md5(mssg.encode()).hexdigest()
 
@@ -136,7 +182,7 @@ def login():
 	global loginFlag
 	global loginHash
 	mssg = 'LIN\t' + dev_id + '\t' + passphrase + '\t' + ip + '\t' + str(port)
-	send_packet(mssg)
+	send_udp(mssg)
 	loginFlag = 1
 	loginHash = hashlib.md5(mssg.encode()).hexdigest()
 
@@ -160,7 +206,7 @@ def logoff():
 	global logoffFlag
 	global logoffHash
 	mssg = 'LOF\t' + dev_id
-	send_packet(mssg)
+	send_udp(mssg)
 	logoffFlag = 1
 	logoffHash = hashlib.md5(mssg.encode()).hexdigest()
 
@@ -182,7 +228,7 @@ def handleQuery(message):
 def sendData(message):
 	global dataHash
 	mssg = 'DAT\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(len(message)) + '\t' + message
-	send_packet(mssg)
+	send_udp(mssg)
 	toLog('Sending data: ' + message)
 	dataHash = hashlib.md5(mssg.encode()).hexdigest()
 
@@ -208,28 +254,25 @@ def toError(message):
 	log.write(str(datetime.datetime.now()) + ': ' + message + '\n')
 	log.close()
 
-#Function used to get IP address
-def getMyIP():
-	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-	s.connect(("8.8.8.8", 80))
-	ip = s.getsockname()[0]
-	s.close()
-	return str(s)
-
 #Used to start the listener and server the menu
 def main():
-	global user_id
+	global dev_id
 	global server_ip
 	global server_port
 	global ip
 
-	if len(sys.argv) != 4:
-		print("Usage: <program_file><user-ID><server-ip><server-port>")
+	if len(sys.argv) < 4:
+		print("Usage: <program_file><device-ID><server-ip><server-port>")
 		exit(1)
-	user_id = sys.argv[1]
+
+	dev_id = sys.argv[1]
 	server_ip = sys.argv[2]
 	server_port = sys.argv[3]
-	ip = getMyIP()
+	try:
+		if sys.argv[4] == 'test':
+			ip = '127.0.0.1'
+	except:
+		ip = socket.gethostbyname(socket.gethostname())
 	start_listener()
 	
 	run = 1
@@ -245,7 +288,6 @@ def main():
 		print("Enter 'data' to send data to the server.")
 		print("Enter 'quit' to end program")
 		
-
 		selection = input("Enter Selection: ")  
 		if selection == 'reg':
 			register()
@@ -260,7 +302,5 @@ def main():
 		elif(selection == 'quit'):
 			run = 0
 
-# initiate program
 if __name__ == "__main__":
-	#main(sys.argv)
 	main()

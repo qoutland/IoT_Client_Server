@@ -22,7 +22,7 @@ quit: Terminate the program
 Run Instructions:
 
 ```bash
-python client.py user_id server_ip server_port
+python client.py device_id server_ip server_port
 ```
 
 ### Usage
