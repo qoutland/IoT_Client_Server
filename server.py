@@ -75,15 +75,15 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 		toLog('Server Message: ' + str(message) + ' was recieved.')
 
 		if message[0] == 'REG':
-			register(message[1], message[2], message[3], client_ip, port, str(message))
+			register(message[1], message[2], message[3], client_ip, port, data)
 		elif message[0] == 'DER':
-			deregister(message[1], message[2], message[3], client, port, str(message))
+			deregister(message[1], message[2], message[3], client_ip, port, data)
 		elif message[0] == 'LIN':
-			login(message[1], message[2], message[3], message[4], str(message))
+			login(message[1], message[2], client_ip, port, data)
 		elif message[0] == 'LOF':
 			logoff(message[1], str(message))
 		elif message[0] == 'DAT': 
-			storeData(message[0], message[1], message[2], message[3], message[4], str(message))
+			storeData(message[0], message[1], message[2], message[3], message[4], data)
 		else:			
 			toError('Server: ' + str(message))
 
@@ -164,7 +164,7 @@ def send_tcp(code, dev_id, dest_ip, dest_port, message):
 	try:
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		s.connect((dest_ip, int(dest_port)))
-		s.send(('ACK\t' + code + '\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(message.encode()).hexdigest())).encode())
+		s.send(('ACK\t' + code + '\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(message).hexdigest())).encode())
 		s.close()
 	except ConnectionRefusedError:
 		toError('TCP Socket couldn\'t connect to: ' + str(dest_ip) + ':' + str(dest_port))

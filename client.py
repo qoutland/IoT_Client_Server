@@ -126,6 +126,7 @@ def register():
 	send_tcp(mssg)
 	regFlag = 1
 	regHash = hashlib.md5(mssg.encode()).hexdigest()
+	toLog('Register Hash: ' + str(regHash))
 	toLog('Sending register packet to: ' + str(server_ip)+ ':' + str(server_port))
 
 #Verifies ACK packet for registration
@@ -181,10 +182,11 @@ def verifyDereg(message):
 def login():
 	global loginFlag
 	global loginHash
-	mssg = 'LIN\t' + dev_id + '\t' + passphrase + '\t' + ip + '\t' + str(port)
-	send_udp(mssg)
+	mssg = 'LIN\t' + dev_id + '\t' + passphrase
+	send_tcp(mssg)
 	loginFlag = 1
 	loginHash = hashlib.md5(mssg.encode()).hexdigest()
+	toLog('Login hash: ' + str(loginHash))
 
 #Verifies ACK packet for logins
 def verifyLogin(message):
