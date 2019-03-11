@@ -29,7 +29,6 @@ dataHash = hashlib.md5()
 
 # Starts TCP/UDP Listeners
 def start_listener():
-
 	t1 = threading.Thread(target=TCP_listener)
 	t1.daemon=True
 	t1.start()
@@ -39,16 +38,16 @@ def start_listener():
 
 # Self explanatory
 def UDP_listener():
-	global ip, port
-	server = socketserver.UDPServer((ip, int(port)), MyUDPHandler)
-	server.serve_forever()
+	global ip, port, udp_server
+	udp_server = socketserver.UDPServer((ip, int(port)), MyUDPHandler)
+	udp_server.serve_forever()
 
 # Self explanatory
 def TCP_listener():
-	global ip, port
-	server = socketserver.TCPServer((ip, int(port)), MyTCPHandler)
+	global ip, port, tcp_server
+	tcp_server = socketserver.TCPServer((ip, int(port)), MyTCPHandler)
 	#PROD #server = socketserver.TCPServer((ip, int(server_port)), MyTCPHandler)
-	server.serve_forever()
+	tcp_server.serve_forever()
 
 # Recieves all TCP Messages
 class MyTCPHandler(socketserver.BaseRequestHandler):
@@ -120,6 +119,7 @@ def send_udp(message):
 def send_tcp(message):
 	try:
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.bind(('', int(port)))
 		s.connect((server_ip, int(server_port)))
 		s.send(message.encode())
 		s.close()
@@ -280,7 +280,6 @@ def show():
 		print(client.id + '\t' + client.ip + '\t' + client.port + '\t' + str(client.alive) +'\n')
 	print('\n')
 
-
 #Writes activity messages to a file (Updates in real time)
 def toLog(message):
 	log = open(activityLog, 'a')
@@ -312,7 +311,7 @@ def main():
 	try:
 		if sys.argv[4] == 'test':
 			ip = '127.0.0.1'
-			port = 9997
+			port = 9998
 	except:
 		ip = socket.gethostbyname(socket.gethostname())
 	start_listener()

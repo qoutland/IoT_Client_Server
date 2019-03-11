@@ -17,22 +17,13 @@ activityLog = 'Activity.log'
 errorLog = 'Error.log'
 log = open(activityLog, 'a')
 error = open(errorLog, 'a')
+tstFlag = 0
 
 # Starts TCP/UDP Listeners
 def start_listener():
-
 	t1 = threading.Thread(target=TCP_listener)
 	t1.daemon=True
 	t1.start()
-	t2 = threading.Thread(target=UDP_listener)
-	t2.daemon=True
-	t2.start()
-
-# Self explanatory
-def UDP_listener():
-	global ip, port
-	server = socketserver.UDPServer((ip, int(port)), MyUDPHandler)
-	server.serve_forever()
 
 # Self explanatory
 def TCP_listener():
@@ -42,46 +33,27 @@ def TCP_listener():
 	server = socketserver.TCPServer((ip, int(port)), MyTCPHandler)
 	server.serve_forever()
 
-# Handles all incoming UDP Messages 
-class MyUDPHandler(socketserver.BaseRequestHandler):
-
-	def handle(self):
-
-		data = self.request[0].strip()
-		message = data.decode().split('\t')
-		toLog('Message: ' + str(message) + ' was recieved.')
-		
-		if message[0] == 'REG':
-			register(message[1], message[2], message[3], message[4], message[5], data)
-		elif message[0] == 'DER':
-			deregister(message[1], message[2], message[3], message[4], message[5], data)
-		elif message[0] == 'LIN':
-			login(message[1], message[2], message[3], message[4], data)
-		elif message[0] == 'LOF':
-			logoff(message[1], data)
-		elif message[0] == 'DAT': 
-			storeData(message[0], message[1], message[2], message[3], message[4], data)
-		else:			
-			toError(str(message))
-
 # Handles all incomping TCP Messages
 class MyTCPHandler(socketserver.BaseRequestHandler):
 
 	def handle(self):
 		global port
 		client_ip = self.client_address[0]
-		data = self.request.recv(1024)
+		data = self.request.recv(512)
 		message = data.decode().split('\t')
 		toLog('Server Message: ' + str(message) + ' was recieved.')
 
 		if message[0] == 'REG':
 			register(message[1], message[2], message[3], client_ip, port, data)
+			self.wfile.write('Testing')
 		elif message[0] == 'DER':
 			deregister(message[1], message[2], message[3], client_ip, port, data)
 		elif message[0] == 'LIN':
 			login(message[1], message[2], client_ip, port, data)
 		elif message[0] == 'LOF':
-			logoff(message[1], str(message))
+			logoff(message[1], data)
+		elif message[0] == 'QUE':
+			devQue(message[1], message[2], message[4], client_ip, port, data)
 		elif message[0] == 'DAT': 
 			storeData(message[0], message[1], message[2], message[3], message[4], data)
 		else:			
@@ -89,6 +61,7 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 
 #Performs integrity checks then registers client
 def register(dev_id, passw, mac, ip, port, message):
+	global tstFlag
 	for client in clients:
 		#Already registered
 		if (dev_id == client.id and passw == client.passw and mac == client.mac and port == client.port):
@@ -102,12 +75,12 @@ def register(dev_id, passw, mac, ip, port, message):
 				send_tcp('02',dev_id, ip, port, messsage)
 				return 0
 		#IP already registered
-		elif ip == client.ip:
+		elif ip == client.ip and tstFlag == 0:
 			toLog('IP is already registered to another device.')
 			send_tcp('12',dev_id, ip, port, message)
 			return 0
 		#MAC already registered
-		elif mac == client.mac:
+		elif mac == client.mac and tstFlag == 0:
 			toLog('MAC address is already registered to another device.')
 			send_tcp('20',dev_id, ip, port, message)
 			return 0
@@ -154,11 +127,6 @@ def logoff(dev_id, message):
 	toLog('An unauthorized device attempted to logoff another device: ' + str(message))
 	return 0
 
-#Sends UDP ACKS
-def send_udp(code, dev_id, dest_ip, dest_port, message):
-	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
-	sock.sendto(('ACK\t' + code + '\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(message).hexdigest())).encode(), (dest_ip, int(dest_port)))
-
 #Sends TCP ACKS
 def send_tcp(code, dev_id, dest_ip, dest_port, message):
 	try:
@@ -171,17 +139,53 @@ def send_tcp(code, dev_id, dest_ip, dest_port, message):
 
 #Sends a query packet to a specific client
 def sendQue():
-	show()
+	if len(clients) == 0:
+		input('\nNo devices registered. Press ENTER to continue.')
+		return 0
+	else:
+		show()
 	dev_id = input('Enter the device ID: ')
+	
+	for client in clients:
+		if dev_id == client.id:
+			if client.auth:
+				pass
+			else:
+				input('Device must login first, press ENTER to continue.')
+				return 0
+		else:
+			input('Device not found. Press ENTER to continue.')
+			return 0
+
 	code = input('What would you like to query for: ')
 
 	for client in clients:
 		if (dev_id == client.id):
-			sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
-			sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
-			sock.sendto(('QUE\t' + str(code) + '\t' + dev_id + '\t' + str(datetime.datetime.now())).encode(), (client.ip, int(client.port)))
+			mssg = 'QUE\t' + str(code) + '\t' + dev_id + '\t' + str(datetime.datetime.now())
+			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			s.connect((client.ip, int(client.port)))
+			s.send(mssg.encode())
+			toLog('Server Que: '+ str(mssg))
 			return 0
-	input('Device is not registered, press ENTER to continue...')
+
+#Responds a device IP and port to another client
+def devQue(code, dev_id, que_id, dest_ip, dest_port, message):
+	mssg = ''
+	if code == '01':
+		for client in clients:
+			if client.id == que_id:
+				ip_info = str(que_id) + '\t' + str(client.ip) + '\t' + str(client.port)
+				mssg = 'DAT\t01\t' + str(datetime.datetime.now()) + '\t' + str(len(ip_info)) + '\t' + ip_info 
+		if mssg == '':
+			mssg == 'DAT\t11\t' + str(datetime.datetime.now()) + '\t1\t' + que_id
+			toLog('Device with id: ' + que_id + ' is not registerd')
+	else:
+		toLog('Code not found: ' + str(message))
+		return 0
+	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	s.connect((dest_ip, int(dest_port)))
+	s.send(mssg.encode())
+	toLog('Server Que: '+ str(mssg))
 
 #Stores data from clients
 def storeData(code, dev_id, time, length, data, message):
@@ -198,7 +202,7 @@ def show():
 	os.system('cls') if platform.system() else os.system(clear)
 	print('ID\t\tPass-phrase\t\tMAC\t\t\tIP\t\tPort\tLogged In')
 	for client in clients:
-		print(client.id + '\t\t' +client.passw + '\t\t'+ client.mac + '\t' + client.ip + '\t' + client.port + '\t' + str(client.auth) +'\n')
+		print(client.id + '\t\t' +client.passw + '\t\t'+ client.mac + '\t' + client.ip + '\t' + client.port + '\t' + str(client.auth))
 	print('\n')
 
 #Writes activity messages to a file (Updates in real time)
@@ -218,6 +222,7 @@ def main():
 	
 	global port
 	global ip
+	global tstFlag
 	if len(sys.argv) < 2:
 		print("Usage: <program_file><port>")
 		exit(1)
@@ -225,6 +230,7 @@ def main():
 	try:
 		if sys.argv[2] == 'test':
 			ip = '127.0.0.1'
+			tstFlag = 1
 	except:
 		ip = socket.gethostbyname(socket.gethostname())
 	start_listener()
@@ -232,7 +238,7 @@ def main():
 	run = 1
 	while(run):
 
-		#os.system('cls') if platform.system() is 'Windows' else os.system('clear')
+		os.system('cls') if platform.system() is 'Windows' else os.system('clear')
 		print("Enter 'show' to show all registered devices.")
 		print("Enter 'query' to send data query to the client")
 		print("Enter 'quit' to end program")

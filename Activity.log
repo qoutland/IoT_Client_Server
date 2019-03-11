@@ -1,0 +1,64 @@
+2019-03-11 13:30:13.822994: Server Message: ['REG', 'dev_id', 'password', 'bc:14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:30:13.822994: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:30:13.838594: Device was successfully registered from message: b'REG\tdev_id\tpassword\tbc:14:ef:67:ba:a7'
+2019-03-11 13:30:13.838594: Server Message: ['ACK', '00', 'dev_id', '2019-03-11 13:30:13.822994', '6ccdff475addc602428624af46b89460'] was recieved.
+2019-03-11 13:30:24.067994: Register Hash: 9677b3c3019d67e1dba5f473d2f5c036
+14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:30:24.083594: IP is already registered to another device.
+2019-03-11 13:30:24.083594: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:30:24.083594: Server Message: ['ACK', '12', 'dev_1', '2019-03-11 13:30:24.083594', '9677b3c3019d67e1dba5f473d2f5c036'] was recieved.
+2019-03-11 13:32:28.177194: Register Hash: 6ccdff475addc602428624af46b89460
+:14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:32:28.177194: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:32:28.178194: Device was successfully registered from message: b'REG\tdev_id\tpassword\tbc:14:ef:67:ba:a7'
+2019-03-11 13:32:28.181194: Server Message: ['ACK', '00', 'dev_id', '2019-03-11 13:32:28.177194', '6ccdff475addc602428624af46b89460'] was recieved.
+2019-03-11 13:32:33.098194: Register Hash: 9677b3c3019d67e1dba5f473d2f5c036
+14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:32:33.098194: MAC address is already registered to another device.
+2019-03-11 13:32:33.113794: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:32:33.113794: Server Message: ['ACK', '20', 'dev_1', '2019-03-11 13:32:33.113794', '9677b3c3019d67e1dba5f473d2f5c036'] was recieved.
+2019-03-11 13:32:49.003794: Server Message: ['REG', 'dev_id', 'password', 'bc:14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:32:49.008794: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:32:49.011794: Device was successfully registered from message: b'REG\tdev_id\tpassword\tbc:14:ef:67:ba:a7'
+2019-03-11 13:32:49.016794: Server Message: ['ACK', '00', 'dev_id', '2019-03-11 13:32:49.007794', '6ccdff475addc602428624af46b89460'] was recieved.
+2019-03-11 13:32:50.739794: Server Message: ['REG', 'dev_1', 'password', 'bc:14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:32:50.746794: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:32:50.746794: Device was successfully registered from message: b'REG\tdev_1\tpassword\tbc:14:ef:67:ba:a7'
+2019-03-11 13:32:50.752794: Server Message: ['ACK', '00', 'dev_1', '2019-03-11 13:32:50.741794', '9677b3c3019d67e1dba5f473d2f5c036'] was recieved.
+2019-03-11 13:33:25.437794: Server Message: ['REG', 'dev_id', 'password', 'bc:14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:33:25.437794: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:33:25.437794: Device was successfully registered from message: b'REG\tdev_id\tpassword\tbc:14:ef:67:ba:a7'
+2019-03-11 13:33:25.440794: Server Message: ['ACK', '00', 'dev_id', '2019-03-11 13:33:25.437794', '6ccdff475addc602428624af46b89460'] was recieved.
+2019-03-11 13:33:30.867394: Register Hash: 9677b3c3019d67e1dba5f473d2f5c036
+14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:33:30.867394: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:33:30.867394: Device was successfully registered from message: b'REG\tdev_1\tpassword\tbc:14:ef:67:ba:a7'
+2019-03-11 13:33:30.867394: Server Message: ['ACK', '00', 'dev_1', '2019-03-11 13:33:30.867394', '9677b3c3019d67e1dba5f473d2f5c036'] was recieved.
+2019-03-11 13:34:30.730794: Server Message: ['QUE', '01', 'dev_id', '2019-03-11 13:34:30.730794', 'dev_1'] was recieved.
+2019-03-11 13:34:30.746394: Server Que: DAT	01	2019-03-11 13:34:30.730794	20	dev_1	127.0.0.1	9999
+2019-03-11 13:34:30.746394: Server Message: ['DAT', '01', '2019-03-11 13:34:30.730794', '20', 'dev_1', '127.0.0.1', '9999'] was recieved.
+2019-03-11 13:34:30.761994: Rejected the message(device not registered): dev_1
+2019-03-11 13:34:30.761994: Server Message: ['ACK', '51', '01', '2019-03-11 13:34:30.761994', '566408d2876be03fad12f666264e3dd8'] was recieved.
+2019-03-11 13:41:44.943594: Register Hash: 6ccdff475addc602428624af46b89460
+:14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:41:44.959194: Client already registered.
+2019-03-11 13:41:44.959194: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:41:44.959194: Server Message: ['ACK', '01', 'dev_id', '2019-03-11 13:41:44.959194', '6ccdff475addc602428624af46b89460'] was recieved.
+2019-03-11 13:43:11.480994: Server Message: ['REG', 'dev_id', 'password', 'bc:14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:43:11.480994: Register Hash: 6ccdff475addc602428624af46b89460
+2019-03-11 13:43:11.480994: Client already registered.
+2019-03-11 13:43:11.480994: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:43:11.480994: Server Message: ['ACK', '01', 'dev_id', '2019-03-11 13:43:11.480994', '6ccdff475addc602428624af46b89460'] was recieved.
+2019-03-11 13:43:32.591594: Register Hash: 6ccdff475addc602428624af46b89460
+:14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:43:32.592594: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:43:32.592594: Device was successfully registered from message: b'REG\tdev_id\tpassword\tbc:14:ef:67:ba:a7'
+2019-03-11 13:43:32.592594: Server Message: ['ACK', '00', 'dev_id', '2019-03-11 13:43:32.591594', '6ccdff475addc602428624af46b89460'] was recieved.
+2019-03-11 13:46:50.824594: Server Message: ['d'] was recieved.
+2019-03-11 13:47:00.949794: Server Message: ['T'] was recieved.
+2019-03-11 13:47:12.592394: Client Message: ['g'] was recieved.
+2019-03-11 13:53:21.927094: Register Hash: 9677b3c3019d67e1dba5f473d2f5c036
+14:ef:67:ba:a7'] was recieved.
+2019-03-11 13:53:21.938094: Sending register packet to: 127.0.0.1:9999
+2019-03-11 13:53:21.938094: Device was successfully registered from message: b'REG\tdev_1\tpassword\tbc:14:ef:67:ba:a7'
+2019-03-11 13:53:21.946094: Server Message: ['ACK', '00', 'dev_1', '2019-03-11 13:53:21.932094', '9677b3c3019d67e1dba5f473d2f5c036'] was recieved.
