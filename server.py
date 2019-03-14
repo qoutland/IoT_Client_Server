@@ -39,103 +39,111 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 	def handle(self):
 		global port
 		client_ip = self.client_address[0]
-		data = self.request.recv(512)
+		data = self.request.recv(1024)
 		message = data.decode().split('\t')
 		toLog('Server Message: ' + str(message) + ' was recieved.')
 
 		if message[0] == 'REG':
-			register(message[1], message[2], message[3], client_ip, port, data)
-			self.wfile.write('Testing')
+			self.request.sendall(register(message[1], message[2], message[3], client_ip, port, data))
 		elif message[0] == 'DER':
-			deregister(message[1], message[2], message[3], client_ip, port, data)
+			self.request.sendall(deregister(message[1], message[2], message[3], client_ip, port, data))
 		elif message[0] == 'LIN':
-			login(message[1], message[2], client_ip, port, data)
+			self.request.sendall(login(message[1], message[2], client_ip, port, data))
 		elif message[0] == 'LOF':
-			logoff(message[1], data)
+			self.request.sendall(logoff(message[1], data))
 		elif message[0] == 'QUE':
-			devQue(message[1], message[2], message[4], client_ip, port, data)
+			self.request.sendall(devQue(message[1], message[2], message[4], client_ip, port, data))
 		elif message[0] == 'DAT': 
-			storeData(message[0], message[1], message[2], message[3], message[4], data)
+			self.request.sendall(storeData(message[0], message[1], message[2], message[3], message[4], data))
 		else:			
 			toError('Server: ' + str(message))
 
 #Performs integrity checks then registers client
 def register(dev_id, passw, mac, ip, port, message):
 	global tstFlag
+	code = ''
 	for client in clients:
 		#Already registered
 		if (dev_id == client.id and passw == client.passw and mac == client.mac and port == client.port):
 			if ip == client.ip:
 				toLog('Client already registered.')
-				send_tcp('01',dev_id, ip, port, message)
-				return 0
+				code = '01'
+				break
 			else:
 				toLog('Client already registered, just updated its IP.')
 				client.updateIP(ip)
-				send_tcp('02',dev_id, ip, port, messsage)
-				return 0
+				code = '02'
+				break
 		#IP already registered
 		elif ip == client.ip and tstFlag == 0:
 			toLog('IP is already registered to another device.')
-			send_tcp('12',dev_id, ip, port, message)
-			return 0
+			code = '12'
+			break
 		#MAC already registered
 		elif mac == client.mac and tstFlag == 0:
 			toLog('MAC address is already registered to another device.')
-			send_tcp('20',dev_id, ip, port, message)
-			return 0
-	clients.append(Client(dev_id, passw, mac, ip, port))
-	send_tcp('00', dev_id, ip, port, message)
+			code = '20'
+			break
+
+	if code == '':
+		toLog('Registering device: ' + dev_id )
+		clients.append(Client(dev_id, passw, mac, ip, port))
+		return ('ACK\t00\t' + dev_id + '\t' + str(hashlib.md5(message).hexdigest())).encode()
+	else:
+		return ('ACK\t' + code + '\t' + dev_id + '\t' + str(hashlib.md5(message).hexdigest())).encode()
 	toLog('Device was successfully registered from message: ' + str(message))
 
 #Performs integrity checks then deregisters client
 def deregister(dev_id, passw, mac, ip, port, message):
+	code = ''
 	for client in clients:
 		if (dev_id == client.id and passw == client.passw and mac == client.mac and port == client.port):
 			clients.remove(client)
-			send_tcp('20', dev_id, ip, port, message)
 			toLog('Device was successfully deregistered from message: ' + str(message))
-			return 0
+			code = '20'
+			break
 		elif (dev_id == client.id or mac == client.mac or port == client.port):
-			send_tcp('30', dev_id, ip, port, message)
 			toLog('An device attempted to deregister with the wrong information: ' + str(message))
+			code = '30'
+			break
 
-	send_tcp('21', dev_id, ip, port, message)
-	toLog('An unregistered device attempted to deregister: ' + str(message))
-	return 0
+	if code == '':
+		toLog('An unregistered device attempted to deregister: ' + str(message))
+		return ('ACK\t21\t' + dev_id + '\t' + str(hashlib.md5(message).hexdigest())).encode()
+	else:
+		return ('ACK\t' + code + '\t' + dev_id + '\t' + str(hashlib.md5(message).hexdigest())).encode()
 
 #Handles client logins to the server
 def login(dev_id, passw, ip, port, message):
+	code = ''
 	for client in clients:
 		if (dev_id == client.id and passw == client.passw and ip == client.ip  and port == client.port):
 			client.auth = True
-			send_tcp('70', dev_id, ip, port, message)
-			return 0
-
-	send_tcp('31', dev_id, ip, port, message)
-	return 0
+			code = '70'
+			break
+	if code == '':
+		return ('ACK\t31\t' + dev_id + '\t' + str(hashlib.md5(message).hexdigest())).encode()
+	else:
+		return ('ACK\t' + code + '\t' + dev_id + '\t' + str(hashlib.md5(message).hexdigest())).encode()
 
 #Handles client logoffs from the server
 def logoff(dev_id, message):
+	code = ''
 	for client in clients:
 		if (dev_id == client.id):
-			client.auth = False
-			send_tcp('80',dev_id, client.ip, client.port, message)
-			return 0
+			if client.auth:
+				client.auth = False
+				code = '80'
+				break
+			else:
+				code = '32'
+				break
 
-	#sendAck('31', dev_id, ip, port, message)
-	toLog('An unauthorized device attempted to logoff another device: ' + str(message))
-	return 0
-
-#Sends TCP ACKS
-def send_tcp(code, dev_id, dest_ip, dest_port, message):
-	try:
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((dest_ip, int(dest_port)))
-		s.send(('ACK\t' + code + '\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(message).hexdigest())).encode())
-		s.close()
-	except ConnectionRefusedError:
-		toError('TCP Socket couldn\'t connect to: ' + str(dest_ip) + ':' + str(dest_port))
+	if code == '':
+		toLog('An unregistered device tried to logoff.' + str(message))
+		return ('ACK\t31\t' + dev_id + '\t' + str(hashlib.md5(message).hexdigest())).encode()
+	else:
+		return ('ACK\t' + code + '\t' + dev_id + '\t' + str(hashlib.md5(message).hexdigest())).encode()
 
 #Sends a query packet to a specific client
 def sendQue():
@@ -175,17 +183,15 @@ def devQue(code, dev_id, que_id, dest_ip, dest_port, message):
 		for client in clients:
 			if client.id == que_id:
 				ip_info = str(que_id) + '\t' + str(client.ip) + '\t' + str(client.port)
-				mssg = 'DAT\t01\t' + str(datetime.datetime.now()) + '\t' + str(len(ip_info)) + '\t' + ip_info 
+				return 'DAT\t01\t' + str(datetime.datetime.now()) + '\t' + str(len(ip_info)) + '\t' + ip_info 
+
 		if mssg == '':
-			mssg == 'DAT\t11\t' + str(datetime.datetime.now()) + '\t1\t' + que_id
 			toLog('Device with id: ' + que_id + ' is not registerd')
+			return 'DAT\t11\t' + str(datetime.datetime.now()) + '\t1\t' + que_id
+			
 	else:
 		toLog('Code not found: ' + str(message))
 		return 0
-	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	s.connect((dest_ip, int(dest_port)))
-	s.send(mssg.encode())
-	toLog('Server Que: '+ str(mssg))
 
 #Stores data from clients
 def storeData(code, dev_id, time, length, data, message):

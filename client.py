@@ -29,7 +29,6 @@ dataHash = hashlib.md5()
 
 # Starts TCP/UDP Listeners
 def start_listener():
-
 	t1 = threading.Thread(target=TCP_listener)
 	t1.daemon=True
 	t1.start()
@@ -39,16 +38,16 @@ def start_listener():
 
 # Self explanatory
 def UDP_listener():
-	global ip, port
-	server = socketserver.UDPServer((ip, int(port)), MyUDPHandler)
-	server.serve_forever()
+	global ip, port, udp_server
+	udp_server = socketserver.UDPServer((ip, int(port)), MyUDPHandler)
+	udp_server.serve_forever()
 
 # Self explanatory
 def TCP_listener():
-	global ip, port
-	server = socketserver.TCPServer((ip, int(port)), MyTCPHandler)
+	global ip, port, tcp_server
+	tcp_server = socketserver.TCPServer((ip, int(port)), MyTCPHandler)
 	#PROD #server = socketserver.TCPServer((ip, int(server_port)), MyTCPHandler)
-	server.serve_forever()
+	tcp_server.serve_forever()
 
 # Recieves all TCP Messages
 class MyTCPHandler(socketserver.BaseRequestHandler):
@@ -120,11 +119,17 @@ def send_udp(message):
 def send_tcp(message):
 	try:
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.bind(('', int(port)))
 		s.connect((server_ip, int(server_port)))
 		s.send(message.encode())
-		s.close()
+		data = s.recv(1024)
+		message = data.decode().split('\t')
 	except ConnectionRefusedError:
 		toError('TCP Socket couldn\'t connect to: ' + str(server_ip) + ':' + str(server_port))
+	finally:
+		s.close()
+		toLog('Client Recieved: ' + str(message))
+		return message
 
 #Used to register a device to the server 
 def register():
@@ -133,11 +138,10 @@ def register():
 	#UDP #mssg = 'REG\t' + dev_id + '\t' + passphrase + '\t' + str(mac) + '\t' + ip + '\t' + str(port)
 	#UDP #send_udp(mssg)
 	mssg = 'REG\t' + dev_id + '\t' + passphrase + '\t' + str(mac)
-	send_tcp(mssg)
 	regFlag = 1
 	regHash = hashlib.md5(mssg.encode()).hexdigest()
-	toLog('Register Hash: ' + str(regHash))
 	toLog('Sending register packet to: ' + str(server_ip)+ ':' + str(server_port))
+	verifyReg(send_tcp(mssg))
 
 #Verifies ACK packet for registration
 def verifyReg(message):
@@ -166,25 +170,24 @@ def verifyReg(message):
 def deregister():
 	global deregFlag
 	global deregHash
-	#mssg = 'DER\t' + dev_id + '\t' + passphrase + '\t' + str(mac) + '\t' + ip + '\t' + str(port)
 	mssg = 'DER\t' + dev_id + '\t' + passphrase + '\t' + str(mac)
-	send_tcp(mssg)
 	deregFlag = 1
 	deregHash = hashlib.md5(mssg.encode()).hexdigest()
+	verifyDereg(send_tcp(mssg))
 
 #Verifies ACK packet for deregistration
 def verifyDereg(message):
 	global deregFlag
 	global registered
-	if message[1] == '20':
+	if str(message[1]) == '20':
 		deregFlag = 0
 		toLog('Successfully deregistered. ' + str(message))
 		registered = False
-	elif message[1] == '21':
+	elif str(message[1]) == '21':
 		deregFlag = 0
 		toLog('Never registered. ' + str(message))
 		registered = False
-	elif message[1] == '30':
+	elif str(message[1]) == '30':
 		deregFlag = 0
 		toLog('Incorrect deregistration information. ' + str(message))
 
@@ -193,10 +196,9 @@ def login():
 	global loginFlag
 	global loginHash
 	mssg = 'LIN\t' + dev_id + '\t' + passphrase
-	send_tcp(mssg)
 	loginFlag = 1
 	loginHash = hashlib.md5(mssg.encode()).hexdigest()
-	toLog('Login hash: ' + str(loginHash))
+	verifyLogin(send_tcp(mssg))
 
 #Verifies ACK packet for logins
 def verifyLogin(message):
@@ -218,9 +220,9 @@ def logoff():
 	global logoffFlag
 	global logoffHash
 	mssg = 'LOF\t' + dev_id
-	send_tcp(mssg)
 	logoffFlag = 1
 	logoffHash = hashlib.md5(mssg.encode()).hexdigest()
+	verifyLogoff(send_tcp(mssg))
 
 #Verifies ACK packet for logoffs
 def verifyLogoff(message):
@@ -229,6 +231,14 @@ def verifyLogoff(message):
 	if message[1] == '80':
 		logoffFlag = 0
 		toLog('Successfully logged off. ' + str(message))
+		loggedIn = False
+	elif message[1] == '31':
+		logoffFlag = 0
+		toLog('Need to register first. ' + str(message))
+		loggedIn = False
+	elif message[1] == '32':
+		logoffFlag = 0
+		toLog('Device was never logged on. ' + str(message))
 		loggedIn = False
 
 #Determines the data to send to th server
@@ -240,7 +250,8 @@ def handleQuery(message):
 def queryID():
 	que_dev_id = input('Enter the device id you want to query: ')
 	send_tcp('QUE\t01\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(que_dev_id))
-#
+
+#Some kind of comment here
 #def query():
 
 def receieveMssg(message):
@@ -253,7 +264,6 @@ def receieveMssg(message):
 		toLog('Device' + message[5] + 'is not currently online')
 	else:
 		toLog('Qcode: ' + message[1] + ' not found.')
-
 
 #Send data to the server after being queued
 def sendData(message):
@@ -279,7 +289,6 @@ def show():
 	for client in clients:
 		print(client.id + '\t' + client.ip + '\t' + client.port + '\t' + str(client.alive) +'\n')
 	print('\n')
-
 
 #Writes activity messages to a file (Updates in real time)
 def toLog(message):
@@ -312,7 +321,7 @@ def main():
 	try:
 		if sys.argv[4] == 'test':
 			ip = '127.0.0.1'
-			port = 9997
+			port = 9998
 	except:
 		ip = socket.gethostbyname(socket.gethostname())
 	start_listener()
