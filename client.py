@@ -1,31 +1,49 @@
 import socket, sys, threading, socketserver, uuid, datetime, time, platform, os, hashlib
 
+#Class for adding clients to my list
 class Client(object):
 	def __init__(self, device_id, device_ip, device_port):
 		self.id = device_id
 		self.ip = device_ip
 		self.port = device_port
-		self.alive = False
+		self.alive = True
 
+	def updateNet(self, client_ip, client_port):
+		self.ip = client_ip
+		self.port  = client_port
+
+#Got this from stack overflow, works good
+class RepeatedTimer(object):
+    def __init__(self, interval, function):
+        self._timer     = None
+        self.interval   = interval
+        self.function   = function
+        self.is_running = False
+        self.start()
+
+    def _run(self):
+        self.is_running = False
+        self.start()
+        self.function()
+
+    def start(self):
+        if not self.is_running:
+            self._timer = threading.Timer(self.interval, self._run)
+            self._timer.start()
+            self.is_running = True
+
+    def stop(self):
+        self._timer.cancel()
+        self.is_running = False
+
+#Global vars
 clients = []
-
 mac = ':'.join(['{:02x}'.format((uuid.getnode() >> ele) & 0xff) for ele in range(0,8*6,8)][::-1])
-port = 9997
 activityLog = 'Activity.log'
 errorLog = 'Error.log'
 passphrase = 'password'
 registered = False
 loggedIn = False
-regFlag = 0
-regHash = hashlib.md5()
-deregFlag = 0
-deregHash = hashlib.md5()
-loginFlag = 0
-loginHash = hashlib.md5()
-logoffFlag = 0
-logoffHash = hashlib.md5()
-dataFlag = 0
-dataHash = hashlib.md5()
 
 # Starts TCP/UDP Listeners
 def start_listener():
@@ -58,27 +76,16 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 
 		data = self.request.recv(1024)
 		message = data.decode().split('\t')
-		toLog('Client Message: ' + str(message) + ' was recieved.')
+		toLog('Client Recieved: ' + str(message))
 
-		if message[0] == 'ACK':
-			if str(regHash) == str(message[4]):
-				verifyReg(message)
-			elif str(deregHash) == str(message[4]):
-				verifyDereg(message)
-			elif str(loginHash) == str(message[4]):
-				verifyLogin(message)
-			elif str(logoffHash) == str(message[4]):
-				verifyLogoff(message)
-			elif str(dataHash) == str(message[4]):
-				verifyData(message)
-			else:
-				toLog('Bad hash: ' + str(message[4]))
-		elif message[0] == 'DAT':
-			receieveMssg(message)
-		elif message[0] == 'QUE':
-			handleQuery(message)
+		if message[0] == 'QUE':
+			handleQuery(message, 1)
+		elif message[0] == 'ACK':
+			handleAck(message)
+		elif message[0] == 'STAT':
+			verifyBeat(message, 1)
 		else:			
-			toError(message)
+			toError(str(message))
 
 # Recieves all UDP Messsages
 class MyUDPHandler(socketserver.BaseRequestHandler):
@@ -90,35 +97,29 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 		data = self.request[0].strip()
 		message = data
 		message = message.decode().split('\t')
-		toLog('Message: ' + str(message) + ' was recieved.')
+		toLog('Client recieved: ' + str(message))
 
-		if message[0] == 'ACK':
-			if str(regHash) == str(message[4]):
-				verifyReg(message)
-			elif str(deregHash) == str(message[4]):
-				verifyDereg(message)
-			elif str(loginHash) == str(message[4]):
-				verifyLogin(message)
-			elif str(logoffHash) == str(message[4]):
-				verifyLogoff(message)
-			elif str(dataHash) == str(message[4]):
-				verifyData(message)
-			else:
-				toLog('Bad hash: ' + str(message[4]))
-		elif message[0] == 'QUE':
-			handleQuery(message)
+		if message[0] == 'QUE':
+			handleQuery(message, 0)
+		elif message[0] == 'DAT':
+			storeData(message)
+		elif message[0] == 'STAT':
+			verifyBeat(message, 0)
+		elif message[0] == 'ACK':
+			handleAck(message)
 		else:			
 			toError(message)
 
 #Sends packets to the server
-def send_udp(message):
+def send_udp(message, client_ip, client_port):
 	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
-	sock.sendto(message.encode(), (server_ip, int(server_port)))
+	sock.sendto(message.encode(), (client_ip, int(client_port)))
 
 #Sends packets to the server
 def send_tcp(message):
 	try:
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.settimeout(10)
 		s.bind(('', int(port)))
 		s.connect((server_ip, int(server_port)))
 		s.send(message.encode())
@@ -133,161 +134,239 @@ def send_tcp(message):
 
 #Used to register a device to the server 
 def register():
-	global regFlag
 	global regHash
-	#UDP #mssg = 'REG\t' + dev_id + '\t' + passphrase + '\t' + str(mac) + '\t' + ip + '\t' + str(port)
-	#UDP #send_udp(mssg)
 	mssg = 'REG\t' + dev_id + '\t' + passphrase + '\t' + str(mac)
-	regFlag = 1
 	regHash = hashlib.md5(mssg.encode()).hexdigest()
 	toLog('Sending register packet to: ' + str(server_ip)+ ':' + str(server_port))
 	verifyReg(send_tcp(mssg))
 
 #Verifies ACK packet for registration
 def verifyReg(message):
-	global regFlag
 	global registered
-	if message[1] =='00':
-		regFlag = 0
-		toLog('Successfully registered. ' + str(message))
-		registered = True
-	elif message[1] == '01':
-		regFlag = 0
-		toLog('Already registered. ' + str(message))
-		registered = True
-	elif message[1] == '02':
-		regFlag = 0
-		toLog('Already registered, just updated your IP. ' + str(message))
-		registered = True
-	elif message[1] == '12':
-		regFlag = 0
-		toLog('Reused IP Address.' + str(message))
-	elif message[1] == '13':
-		regFlag = 0
-		toLog('Reused MAC Address. ' + str(message))
+	global regHash
+	if regHash == message[4]:
+		if message[1] =='00':
+			toLog('Successfully registered. ' + str(message))
+			registered = True
+		elif message[1] == '01':
+			toLog('Already registered. ' + str(message))
+			registered = True
+		elif message[1] == '02':
+			toLog('Already registered, just updated your IP. ' + str(message))
+			registered = True
+		elif message[1] == '12':
+			toLog('Reused IP Address.' + str(message))
+		elif message[1] == '13':
+			toLog('Reused MAC Address. ' + str(message))
+	else:
+		toError('Invalid register hash: ' + message[4] + ' != ' + regHash )
 
 #Request to be deregistered from the server
 def deregister():
-	global deregFlag
 	global deregHash
 	mssg = 'DER\t' + dev_id + '\t' + passphrase + '\t' + str(mac)
-	deregFlag = 1
 	deregHash = hashlib.md5(mssg.encode()).hexdigest()
+	toLog('Sending deregister packet to: ' + str(server_ip)+ ':' + str(server_port))
 	verifyDereg(send_tcp(mssg))
 
 #Verifies ACK packet for deregistration
 def verifyDereg(message):
-	global deregFlag
 	global registered
-	if str(message[1]) == '20':
-		deregFlag = 0
-		toLog('Successfully deregistered. ' + str(message))
-		registered = False
-	elif str(message[1]) == '21':
-		deregFlag = 0
-		toLog('Never registered. ' + str(message))
-		registered = False
-	elif str(message[1]) == '30':
-		deregFlag = 0
-		toLog('Incorrect deregistration information. ' + str(message))
+	global deregHash
+	if deregHash == message[4]:
+		if message[1] == '20':
+			toLog('Successfully deregistered. ' + str(message))
+			registered = False
+		elif message[1] == '21':
+			toLog('Never registered. ' + str(message))
+			registered = False
+		elif message[1] == '30':
+			toLog('Incorrect deregistration information. ' + str(message))
+	else:
+		toError('Invalid deregister hash: ' + message[4] + ' != ' + regHash )
 
 #Requests to login to the server
 def login():
-	global loginFlag
 	global loginHash
-	mssg = 'LIN\t' + dev_id + '\t' + passphrase
-	loginFlag = 1
+	mssg = 'LIN\t' + dev_id + '\t' + passphrase + '\t' + ip + '\t' + str(port)
 	loginHash = hashlib.md5(mssg.encode()).hexdigest()
+	toLog('Sending login packet to: ' + str(server_ip)+ ':' + str(server_port))
 	verifyLogin(send_tcp(mssg))
 
 #Verifies ACK packet for logins
 def verifyLogin(message):
-	global loginFlag
 	global loggedIn
 	global registered
-	if message[1] == '70':
-		loginFlag = 0
-		toLog('Successfully logged in' + str(message))
-		loggedIn = True
-		registered = True
-	elif message[1] == '31':
-		loginFlag = 0
-		toLog('Need to register first.' + str(message))
-		registered = False
+	global loginHash
+	if loginHash == message[4]:
+		if message[1] == '70':
+			toLog('Successfully logged in' + str(message))
+			loggedIn = True
+			registered = True
+		elif message[1] == '31':
+			toLog('Need to register first.' + str(message))
+			registered = False
+	else:
+		toError('Invalid login hash: ' + message[4] + ' != ' + loginHash )
 
 #Requests to logoff of the server
 def logoff():
-	global logoffFlag
 	global logoffHash
 	mssg = 'LOF\t' + dev_id
-	logoffFlag = 1
 	logoffHash = hashlib.md5(mssg.encode()).hexdigest()
+	toLog('Sending logoff packet to: ' + str(server_ip)+ ':' + str(server_port))
 	verifyLogoff(send_tcp(mssg))
 
 #Verifies ACK packet for logoffs
 def verifyLogoff(message):
-	global logoffFlag
 	global loggedIn
-	if message[1] == '80':
-		logoffFlag = 0
-		toLog('Successfully logged off. ' + str(message))
-		loggedIn = False
-	elif message[1] == '31':
-		logoffFlag = 0
-		toLog('Need to register first. ' + str(message))
-		loggedIn = False
-	elif message[1] == '32':
-		logoffFlag = 0
-		toLog('Device was never logged on. ' + str(message))
-		loggedIn = False
+	global logoffHash
+	if logoffHash == message[4]:
+		if message[1] == '80':
+			toLog('Successfully logged off. ' + str(message))
+			loggedIn = False
+		elif message[1] == '31':
+			toLog('Need to register first. ' + str(message))
+			loggedIn = False
+		elif message[1] == '32':
+			toLog('Device was never logged on. ' + str(message))
+			loggedIn = False
+	else:
+		toError('Invalid logoff hash: ' + message[4] + ' != ' + logoffHash )
 
 #Determines the data to send to th server
-def handleQuery(message):
+def handleQuery(message, server):
 	if message[1] == '00':
-		sendData('Test message')
+		mssg = 'DAT\t00\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(len('Test message')) +'\t' + 'Test message'
+	else:
+		toError('Query code: ' + message[1] + 'is not recognized.')
+	if server:
+		handleAck(send_tcp(mssg))
+	else:
+		queryID(message[2])
+		for client in clients:
+			if message[2] == client.id:
+				if message[1] == '00':
+					send_udp(mssg, client.ip, client.port)
+					return 0
+				else:
+					toError('Invalid query code: ' + message[1])
+					return 0
+		toError('Recieved message from unregistered/unknown device')
+	return 0
+
+#Handles Client Acknowlegdments
+def handleAck(message):
+	if message[1] == '40':
+		toLog(message[2] + ' is alive.')
+		for client in clients:
+			if message[2] == client.id:
+				client.alive = True
+	elif message[1] == '50':
+		toLog('Client/Server successfully recieved data message') 
 
 #Queries server for device information
-def queryID():
-	que_dev_id = input('Enter the device id you want to query: ')
-	send_tcp('QUE\t01\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(que_dev_id))
+def queryID(device_id):
+		toLog('Querying server for: ' + device_id)
+		addClient(send_tcp('QUE\t01\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(device_id)))
 
-#Some kind of comment here
-#def query():
-
-def receieveMssg(message):
+#Adds to the Clients list of clients
+def addClient(message):
 	if message[1] == '01':
-		clients.append(Client(message[5], message[6], message[7]))
-		toLog('Added ' + message[5] + 'to client list.')
+		for client in clients:
+			if (message[4] == client.id):
+				if (message[5] == client.ip and message[6] == client.port):
+					toLog('Client ' + message[4] + ' already added.')
+					return 0
+				else:
+					toLog('Updating ' + message[4] + '.')
+					client.updateNet(message[5], message[6])
+					return 0
+		clients.append(Client(message[4], message[5], message[6]))
+		toLog('Added new client.' + str(message))
 	elif message[1] == '11':
-		toLog('No entry found for: ' + message[5])
+		toLog('No entry found for: ' + message[4])
 	elif message[1] == '12':
-		toLog('Device' + message[5] + 'is not currently online')
+		toLog('Device' + message[4] + 'is not currently online')
 	else:
 		toLog('Qcode: ' + message[1] + ' not found.')
+
+#Query other devices
+def query():
+	global dev_id
+	show()
+	client_dev_id = input('Enter the device ID (From above or query the server for a new one): ')
+	if client_dev_id != dev_id:
+		queryID(client_dev_id)
+	else:
+		input('Cannot query self. Press ENTER to continue.')
+		return 0
+
+	for client in clients:
+		if client_dev_id == client.id:
+			code = input('What would you like to query for: ')
+			mssg = 'QUE\t' + str(code) + '\t' + dev_id + '\t' + str(datetime.datetime.now())
+			send_udp(mssg, client.ip, client.port)
+			toLog('Client Que: '+ str(mssg))
+			return 0
+	input('Device not found. Press ENTER to continue.')
+	return 0
 
 #Send data to the server after being queued
 def sendData(message):
 	global dataHash
-	mssg = 'DAT\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(len(message)) + '\t' + message
-	send_tcp(mssg)
+	mssg = 'DAT\t11\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(len(message)) + '\t' + message
 	toLog('Sending data: ' + mssg)
+	handleAck(send_tcp(mssg))
 	dataHash = hashlib.md5(mssg.encode()).hexdigest()
+
+#Recieves data from device after query
+def storeData(message):
+	toLog('Storing: ' + message[5])
+	for client in clients:
+		if message[2] == client.id:
+			send_udp('ACK\t50\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(str(message).encode()).hexdigest()), client.ip, client.port)
 
 #Verifies ACK packet for data sent to the server
 def verifyData(message):
-	global dataFlag
 	if message[1] == '50':
-		dataFlag = 0
 		toLog('Server successfully recieved data. ' + str(message))
 	elif message[1] == '51':
-		dataFlag = 0
 		toLog('Device does not exist on this system.'  + str(message))
 
+#Function to check if another client is still alive
+def heartbeat():
+	if clients == '':
+		toLog('No devices for heartbeat, will check again in 5 mins.')
+		return 0
+	else:
+		for client in clients:
+			toLog('Checking staus of ' + client.id + '.')
+			mssg = 'STAT\t00\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(len('alive?')) + '\talive'
+			client.alive = False
+			send_udp(mssg, client.ip, client.port)
+			
+#Sends ACK to verify that I am alive
+def verifyBeat(message, server):
+	if server:
+		toLog('Telling the server I am alive.')
+		send_tcp('ACK\t40\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(str(message).encode()).hexdigest()))
+		return 0
+
+	queryID(message[2])
+	for client in clients:
+		if client.id == str(message[2]):
+			toLog('Telling '+ client.id + ' I am alive.')
+			send_udp('ACK\t40\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(str(message).encode()).hexdigest()), client.ip, client.port)
+			return 0
+	toLog('Could not find device: ' + message[2])
+
+#Prints list of stored devices
 def show():
 	os.system('cls') if platform.system() else os.system(clear)
 	print('ID\t\tIP\t\tPort\tAlive')
 	for client in clients:
-		print(client.id + '\t' + client.ip + '\t' + client.port + '\t' + str(client.alive) +'\n')
+		print(client.id + '\t\t' + client.ip + '\t' + client.port + '\t' + str(client.alive) +'\n')
 	print('\n')
 
 #Writes activity messages to a file (Updates in real time)
@@ -321,11 +400,13 @@ def main():
 	try:
 		if sys.argv[4] == 'test':
 			ip = '127.0.0.1'
-			port = 9998
+			port = 9997
 	except:
 		ip = socket.gethostbyname(socket.gethostname())
-	start_listener()
-	
+
+	start_listener()#Start UDP/TCP Listening threads
+	beat = RepeatedTimer(300, heartbeat)#Start Heartbeat timer
+
 	run = 1
 	while(run):
 
@@ -337,10 +418,9 @@ def main():
 		print("Enter 'dereg' to deregister this devivce.")
 		print("Enter 'login' to login to the server.")
 		print("Enter 'logoff' to logoff of the server.")
-		print("Enter 'server_query' to query the server.")
-		print("Enter 'device_query' to query another device.")
+		print("Enter 'query' to query another device.")
 		print("Enter 'data' to send data to the server.")
-		print("Enter 'quit' to end program")
+		print("Enter 'quit' to end program.")
 		
 		selection = input("Enter Selection: ")
 		if selection == 'show':
@@ -354,13 +434,12 @@ def main():
 			login()
 		elif selection == 'logoff':
 			logoff()
-		elif selection == 'server_query':
-			queryID()
-		elif selection == 'device_query':
-			print('Not done yet')
+		elif selection == 'query':
+			query()
 		elif selection == 'data':
 			sendData(input('Enter the data would you like to send:'))
 		elif selection == 'quit':
+			beat.stop()
 			run = 0
 
 if __name__ == "__main__":
