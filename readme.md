@@ -16,8 +16,8 @@ python server.py server_port *test*
 ### Usage 
 
 ```
-show: Shows all devices registered to the server
-query: Send a query to a specified device for data
+show: Shows all clients registered to the server
+query: Query a client for data
 quit: Terminate the program
 ```
 
@@ -32,12 +32,12 @@ python client.py device_id server_ip server_port *test*
 ### Usage
 
 ```
-show: Shows list of devices known to this client
-reg: Registers a device to the server specified in command line arg
-dereg: Deregisters the server
-login: Sends login information to the server
-logoff: Sends logout information to the server
-query: Query another device for info
+show: Shows list of clients known to this client
+reg: Registers the client to the server
+dereg: Deregisters the client from the server
+login: Log the client into the server
+logoff: Log a client off of the server
+query: Query another client for info
 data: Send data to the server
 quit: Terminate the program
 ```
