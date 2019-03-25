@@ -124,13 +124,17 @@ def send_tcp(message):
 		s.connect((server_ip, int(server_port)))
 		s.send(message.encode())
 		data = s.recv(1024)
-		message = data.decode().split('\t')
+		mssg = data.decode().split('\t')
 	except ConnectionRefusedError:
 		toError('TCP Socket couldn\'t connect to: ' + str(server_ip) + ':' + str(server_port))
 	finally:
 		s.close()
-		toLog('Client Recieved: ' + str(message))
-		return message
+		try:
+			toLog('Client Recieved: ' + str(mssg))
+			return mssg
+		except:
+			toLog('Client could not connect to server: '+ str(server_ip) + ':' + str(server_port))
+			return 0
 
 #Used to register a device to the server 
 def register():
@@ -138,7 +142,14 @@ def register():
 	mssg = 'REG\t' + dev_id + '\t' + passphrase + '\t' + str(mac)
 	regHash = hashlib.md5(mssg.encode()).hexdigest()
 	toLog('Sending register packet to: ' + str(server_ip)+ ':' + str(server_port))
-	verifyReg(send_tcp(mssg))
+	for i in range(0,3):
+		resp = send_tcp(mssg)
+		if resp == 0:
+			toError('Unable to connect to server on try:' +str(i+1))
+			pass
+		else:
+			verifyReg(resp)
+			break
 
 #Verifies ACK packet for registration
 def verifyReg(message):
@@ -411,7 +422,7 @@ def main():
 	while(run):
 
 		time.sleep(.1)
-		os.system('cls') if platform.system() is 'Windows' else os.system('clear')
+		#os.system('cls') if platform.system() is 'Windows' else os.system('clear')
 		print('\nSTATUS:\tRegistered: ' + str(registered) + '\tLogged in: ' + str(loggedIn) + '\n')
 		print("Enter 'show' to show other devices.")
 		print("Enter 'reg' to register this device.")
