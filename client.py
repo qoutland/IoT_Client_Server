@@ -1,4 +1,4 @@
-import socket, sys, threading, socketserver, uuid, datetime, time, platform, os, hashlib
+import socket, sys, threading, socketserver, uuid, datetime, time, platform, os, hashlib, dropbox
 
 #Class for adding clients to my list
 class Client(object):
@@ -44,7 +44,7 @@ errorLog = 'Error.log'
 passphrase = 'password'
 registered = False
 loggedIn = False
-
+API_KEY = 0
 # Starts TCP/UDP Listeners
 def start_listener():
 	t1 = threading.Thread(target=TCP_listener)
@@ -155,10 +155,15 @@ def register():
 def verifyReg(message):
 	global registered
 	global regHash
-	if regHash == message[4]:
+	global dbx
+	global API_KEY
+	if regHash == message[5]:
 		if message[1] =='00':
 			toLog('Successfully registered. ' + str(message))
 			registered = True
+			if message[3] != '0':
+				API_KEY = message[3]
+				dbx = dropbox.Dropbox(API_KEY)
 		elif message[1] == '01':
 			toLog('Already registered. ' + str(message))
 			registered = True
@@ -169,6 +174,7 @@ def verifyReg(message):
 			toLog('Reused IP Address.' + str(message))
 		elif message[1] == '13':
 			toLog('Reused MAC Address. ' + str(message))
+
 	else:
 		toError('Invalid register hash: ' + message[4] + ' != ' + regHash )
 
@@ -253,6 +259,7 @@ def handleQuery(message, server):
 		toError('Query code: ' + message[1] + 'is not recognized.')
 	if server:
 		handleAck(send_tcp(mssg))
+		toCloud()
 	else:
 		queryID(message[2])
 		for client in clients:
@@ -278,8 +285,8 @@ def handleAck(message):
 
 #Queries server for device information
 def queryID(device_id):
-		toLog('Querying server for: ' + device_id)
-		addClient(send_tcp('QUE\t01\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(device_id)))
+	toLog('Querying server for: ' + device_id)
+	addClient(send_tcp('QUE\t01\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(device_id)))
 
 #Adds to the Clients list of clients
 def addClient(message):
@@ -328,7 +335,9 @@ def sendData(message):
 	global dataHash
 	mssg = 'DAT\t11\t' + dev_id + '\t' + str(datetime.datetime.now()) + '\t' + str(len(message)) + '\t' + message
 	toLog('Sending data: ' + mssg)
+	toCloud(message)
 	handleAck(send_tcp(mssg))
+
 	dataHash = hashlib.md5(mssg.encode()).hexdigest()
 
 #Recieves data from device after query
@@ -392,6 +401,19 @@ def toError(message):
 	log.write(str(datetime.datetime.now()) + ': ' + message + '\n')
 	log.close()
 
+#Send data to the cloud
+def toCloud(message):
+	if API_KEY != 0:
+		#If it exists download it
+		if 'dev1' in dbx.files_list_folder('').entries:
+			dbx.files.DownloadArg(path='/'+dev_id+'.txt')
+		f=open(str(dev_id)+'.txt', 'a+')
+		f.write(message[5])
+		f.close()
+		with open(str(dev_id)+'.txt', 'rb') as f:
+			dbx.files_upload(f.read(), '/', dropbox.files.WriteMode.overwrite)
+		f.close()
+
 #Used to start the listener and server the menu
 def main():
 	global dev_id
@@ -422,7 +444,7 @@ def main():
 	while(run):
 
 		time.sleep(.1)
-		#os.system('cls') if platform.system() is 'Windows' else os.system('clear')
+		os.system('cls') if platform.system() is 'Windows' else os.system('clear')
 		print('\nSTATUS:\tRegistered: ' + str(registered) + '\tLogged in: ' + str(loggedIn) + '\n')
 		print("Enter 'show' to show other devices.")
 		print("Enter 'reg' to register this device.")

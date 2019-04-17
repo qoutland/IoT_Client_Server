@@ -41,3 +41,11 @@ query: Query another client for info
 data: Send data to the server
 quit: Terminate the program
 ```
+
+## Cloud Implementation
+
+Both the client and the server take advantage of dropbox cloud storage.
+    - The clients sync data any time they have any to write to the cloud
+    - The server polls the cloud every 5 minutes for new data
+
+To set up create a file called *apikey.py* in the format of the sameple_key.py.

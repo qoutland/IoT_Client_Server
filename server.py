@@ -1,5 +1,10 @@
-import socket, sys, threading, socketserver, datetime, platform, os, hashlib
-
+import socket, sys, threading, socketserver, datetime, platform, os, hashlib, dropbox
+try:
+	from apikey import API_KEY
+	dbx = dropbox.Dropbox(API_KEY)
+except:
+	input('Data will not be synced with the cloud, no key detected. Press ENTER to continue...')
+	API_KEY = '0'
 class Client(object):
 	def __init__(self, device_id, device_passw, device_mac, device_ip, device_port):
 		self.id = device_id
@@ -130,7 +135,7 @@ def register(message, ip, data):
 		clients.append(Client(message[1], message[2], message[3], ip, '0'))
 		code = '00'
 		toLog('Device was successfully registered from message: ' + str(message))
-	return ('ACK\t' + code + '\t' + message[1] + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(data).hexdigest())).encode()
+	return ('ACK\t' + code + '\t' + message[1] + '\t'+ API_KEY + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(data).hexdigest())).encode()
 	
 #Performs integrity checks then deregisters client
 def deregister(message, ip, data):
@@ -285,6 +290,20 @@ def toError(message):
 	log.write(str(datetime.datetime.now()) + ': ' + message + '\n')
 	log.close()
 
+def checkCloud():
+	for dev in clients:
+		if str(dev.id)+'.txt' in dbx.files_list_folder('').entries:
+			dbx.files.DownloadArg(path='/'+str(dev.id)+'.txt')
+			f=open(str(dev.id)+'.txt','r')
+			lines = f.readlines()
+			toLog(lines) #Or store somewhere
+			f.close()
+			#Empty file so no repeated info
+			open(str(dev.id)+'.txt', 'w').close()
+			with open(str(dev.id)+'.txt', 'rb') as f:
+				dbx.files_upload(f.read(), '/', dropbox.files.WriteMode.overwrite)
+			f.close()
+
 #Starts listener and serves the menu
 def main():
 	
@@ -304,6 +323,8 @@ def main():
 
 	start_listener() #Start TCP Listener
 	beat = RepeatedTimer(300, heartbeat)#Start Heartbeat timer
+	if API_KEY != '0': #If an API key is defined
+		cloud = RepeatedTimer(300, checkCloud) #Check the cloud every 5 mins to pull new data
 
 	run = 1
 	while(run):
@@ -321,6 +342,7 @@ def main():
 			sendQue()
 		elif(selection == 'quit'):
 			beat.stop()
+			cloud.stop()
 			run = 0
 
 if __name__ == "__main__":
