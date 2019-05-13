@@ -1,17 +1,26 @@
-import socket, sys, threading, socketserver, datetime, platform, os, hashlib, dropbox
+import socket, sys, threading, socketserver, datetime, platform, os, hashlib, dropbox, smtplib, ssl, ast
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+
 try:
 	from apikey import API_KEY
 	dbx = dropbox.Dropbox(API_KEY)
+	try:
+		from apikey import USER_EMAIL, USER_EMAIL_PASSWORD
+	except:
+			input('Cloud key cannot be sent because user email was not specified...')
 except:
 	input('Data will not be synced with the cloud, no key detected. Press ENTER to continue...')
 	API_KEY = '0'
+
 class Client(object):
-	def __init__(self, device_id, device_passw, device_mac, device_ip, device_port):
+	def __init__(self, device_id, device_passw, device_mac, device_ip, device_port, pub_key):
 		self.id = device_id
 		self.passw = device_passw
 		self.mac = device_mac
 		self.ip = device_ip
 		self.port = device_port
+		self.pub_key = pub_key
 		self.auth = False
 		self.alive = True
 
@@ -132,10 +141,10 @@ def register(message, ip, data):
 
 	if code == '':
 		toLog('Registering device: ' + message[1] )
-		clients.append(Client(message[1], message[2], message[3], ip, '0'))
+		clients.append(Client(message[1], message[2], message[3], ip, '0', message[4]))
 		code = '00'
 		toLog('Device was successfully registered from message: ' + str(message))
-	return ('ACK\t' + code + '\t' + message[1] + '\t'+ API_KEY + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(data).hexdigest())).encode()
+	return ('ACK\t' + code + '\t' + message[1] + '\t'+ API_KEY + '\t' + str(pub_key) + '\t' + str(datetime.datetime.now()) + '\t' + str(hashlib.md5(data).hexdigest())).encode()
 	
 #Performs integrity checks then deregisters client
 def deregister(message, ip, data):
@@ -215,14 +224,14 @@ def sendQue():
 			send_tcp(mssg, client.ip, client.port)
 			return 0
 
-#Responds a device IP and port to another client
+#Responds a device IP, port, and public key to another client
 def devQue(message):
 	mssg = ''
 	if message[1] == '01':
 		for client in clients:
 			if client.id == message[4]:
 				if client.alive:
-					ip_info = message[4] + '\t' + str(client.ip) + '\t' + str(client.port)
+					ip_info = message[4] + '\t' + str(client.ip) + '\t' + str(client.port) + '\t' + str(client.pub_key)
 					return ('DAT\t01\t' + str(datetime.datetime.now()) + '\t' + str(len(ip_info)) + '\t' + ip_info).encode()
 				else:
 					return ('DAT\t12\t' + str(datetime.datetime.now()) + '\t1\t' + message[4]).encode()
@@ -272,7 +281,7 @@ def verifyAck(message):
 
 #Shows list of registerd clients
 def show():
-	os.system('cls') if platform.system() else os.system(clear)
+	os.system('cls') if platform.system() == 'Windows' else os.system(clear)
 	print('ID\t\tPass-phrase\tMAC\t\t\tIP\t\tPort\tLogged In\tOnline')
 	for client in clients:
 		print(client.id + '\t\t' +client.passw + '\t'+ client.mac + '\t' + client.ip + '\t' + client.port + '\t' + str(client.auth) + '\t\t' + str(client.alive))
@@ -290,6 +299,7 @@ def toError(message):
 	log.write(str(datetime.datetime.now()) + ': ' + message + '\n')
 	log.close()
 
+#Check the cloud for new data
 def checkCloud():
 	for dev in clients:
 		if str(dev.id)+'.txt' in dbx.files_list_folder('').entries:
@@ -304,12 +314,22 @@ def checkCloud():
 				dbx.files_upload(f.read(), '/', dropbox.files.WriteMode.overwrite)
 			f.close()
 
+#Send an email to a recipient to share data
+def shareKey():
+	friend = input('Enter friend\'s email: ')
+	
+	message = 'Subject: API Key\n\n Here is the link: ' + str(dbx.sharing_create_shared_link(path = '/test.txt', short_url=False, pending_upload=None).url) + '\n\nPublic Key:\n' + str(pub_key)
+	with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=ssl.create_default_context()) as server:
+		server.login(USER_EMAIL, USER_EMAIL_PASSWORD)
+		server.sendmail(USER_EMAIL, friend, message)
+	
 #Starts listener and serves the menu
 def main():
 	
 	global port
 	global ip
 	global tstFlag
+	global pub_key
 	if len(sys.argv) < 2:
 		print("Usage: <program_file><port>")
 		exit(1)
@@ -326,12 +346,29 @@ def main():
 	if API_KEY != '0': #If an API key is defined
 		cloud = RepeatedTimer(300, checkCloud) #Check the cloud every 5 mins to pull new data
 
+	#Generate pulic and private keys
+	print('Generating public and private keys...')
+	code = 'password'
+	key = RSA.generate(2048)
+	priv_key = key.exportKey(passphrase=code, pkcs=8)
+	pub_key = key.publickey().exportKey()
+
+	#encryptor = PKCS1_OAEP.new(pub_key)
+	#encrypted = encryptor.encrypt(b'Hello Quin')
+	#print('Encrypted: ' + str(encrypted))
+	#decryptor = PKCS1_OAEP.new(key)
+	#decrypted = decryptor.decrypt(ast.literal_eval(str(encrypted)))
+	#print('Decrypted: ' + str(decrypted))
+
+	print(dbx.sharing_create_shared_link(path = '/test.txt', short_url=False, pending_upload=None).url)
+
 	run = 1
 	while(run):
 
 		os.system('cls') if platform.system() is 'Windows' else os.system('clear')
 		print("Enter 'show' to show all registered devices.")
 		print("Enter 'query' to send data query to the client")
+		print("Enter 'share' to send key to a friend")
 		print("Enter 'quit' to end program")
 
 		selection = input("Enter Selection: ")
@@ -340,6 +377,8 @@ def main():
 			input('Press Enter to Continue...')
 		elif selection == 'query':
 			sendQue()
+		elif selection == 'share':
+			shareKey()
 		elif(selection == 'quit'):
 			beat.stop()
 			cloud.stop()

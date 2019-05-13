@@ -18,6 +18,7 @@ python server.py server_port *test*
 ```
 show: Shows all clients registered to the server
 query: Query a client for data
+share: Share information via email
 quit: Terminate the program
 ```
 
@@ -47,5 +48,11 @@ quit: Terminate the program
 Both the client and the server take advantage of dropbox cloud storage.
     - The clients sync data any time they have any to write to the cloud
     - The server polls the cloud every 5 minutes for new data
+To use add API_KEY to  *apikey.py* in the format of the sameple_key.py.
 
-To set up create a file called *apikey.py* in the format of the sameple_key.py.
+## Sharing and Security
+The server can send an email to other users to share data with them.
+
+Client/Server and Client/Client authentication is done using private and public keys.
+
+To use add USER_EMAIL and USER_EMAIL_PASSWORD to  *apikey.py* in the format of the sameple_key.py.

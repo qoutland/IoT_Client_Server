@@ -1,11 +1,13 @@
 import socket, sys, threading, socketserver, uuid, datetime, time, platform, os, hashlib, dropbox
+from Crypto.PublicKey import RSA
 
 #Class for adding clients to my list
 class Client(object):
-	def __init__(self, device_id, device_ip, device_port):
+	def __init__(self, device_id, device_ip, device_port, pub_key):
 		self.id = device_id
 		self.ip = device_ip
 		self.port = device_port
+		self.pub_key = pub_key
 		self.alive = True
 
 	def updateNet(self, client_ip, client_port):
@@ -139,7 +141,7 @@ def send_tcp(message):
 #Used to register a device to the server 
 def register():
 	global regHash
-	mssg = 'REG\t' + dev_id + '\t' + passphrase + '\t' + str(mac)
+	mssg = 'REG\t' + dev_id + '\t' + passphrase + '\t' + str(mac) + '\t' + str(pub_key)
 	regHash = hashlib.md5(mssg.encode()).hexdigest()
 	toLog('Sending register packet to: ' + str(server_ip)+ ':' + str(server_port))
 	for i in range(0,3):
@@ -153,17 +155,16 @@ def register():
 
 #Verifies ACK packet for registration
 def verifyReg(message):
+
 	global registered
 	global regHash
 	global dbx
 	global API_KEY
+	global server_pub_key
 	if regHash == message[5]:
 		if message[1] =='00':
 			toLog('Successfully registered. ' + str(message))
 			registered = True
-			if message[3] != '0':
-				API_KEY = message[3]
-				dbx = dropbox.Dropbox(API_KEY)
 		elif message[1] == '01':
 			toLog('Already registered. ' + str(message))
 			registered = True
@@ -174,7 +175,12 @@ def verifyReg(message):
 			toLog('Reused IP Address.' + str(message))
 		elif message[1] == '13':
 			toLog('Reused MAC Address. ' + str(message))
-
+		if message[3] != '0':
+				API_KEY = message[3]
+				toLog('Set API Key to: ' + message[3])
+				dbx = dropbox.Dropbox(API_KEY)
+		server_pub_key = message[4]
+		print(server_pub_key)
 	else:
 		toError('Invalid register hash: ' + message[4] + ' != ' + regHash )
 
@@ -259,7 +265,7 @@ def handleQuery(message, server):
 		toError('Query code: ' + message[1] + 'is not recognized.')
 	if server:
 		handleAck(send_tcp(mssg))
-		toCloud()
+		toCloud('Test message')
 	else:
 		queryID(message[2])
 		for client in clients:
@@ -300,7 +306,7 @@ def addClient(message):
 					toLog('Updating ' + message[4] + '.')
 					client.updateNet(message[5], message[6])
 					return 0
-		clients.append(Client(message[4], message[5], message[6]))
+		clients.append(Client(message[4], message[5], message[6], message[7]))
 		toLog('Added new client.' + str(message))
 	elif message[1] == '11':
 		toLog('No entry found for: ' + message[4])
@@ -406,13 +412,22 @@ def toCloud(message):
 	if API_KEY != 0:
 		#If it exists download it
 		if 'dev1' in dbx.files_list_folder('').entries:
+			toLog('Cloud file downloading...')
 			dbx.files.DownloadArg(path='/'+dev_id+'.txt')
-		f=open(str(dev_id)+'.txt', 'a+')
-		f.write(message[5])
+		if os.path.exists(str(dev_id)+'.txt'):
+			toLog('File was downloaded:. Appending now')
+			append_write = 'a'
+		else:
+			toLog('File was not downloaded, creating now')
+			append_write = 'w'
+		f=open(str(dev_id)+'.txt', append_write)
+		f.write(message + '\n')
 		f.close()
 		with open(str(dev_id)+'.txt', 'rb') as f:
-			dbx.files_upload(f.read(), '/', dropbox.files.WriteMode.overwrite)
+			dbx.files_upload(f.read(), '/'+str(dev_id)+'.txt', dropbox.files.WriteMode.overwrite)
 		f.close()
+	else:
+		toLog('No API key specified')
 
 #Used to start the listener and server the menu
 def main():
@@ -421,7 +436,8 @@ def main():
 	global server_port
 	global ip
 	global port
-
+	global pub_key
+	global priv_key
 	if len(sys.argv) < 4:
 		print("Usage: <program_file><device-ID><server-ip><server-port>")
 		exit(1)
@@ -439,6 +455,13 @@ def main():
 
 	start_listener()#Start UDP/TCP Listening threads
 	beat = RepeatedTimer(300, heartbeat)#Start Heartbeat timer
+
+	#Generate pulic and private keys
+	print('Generating public and private keys...')
+	code = 'password'
+	key = RSA.generate(2048)
+	priv_key = key.exportKey(passphrase=code, pkcs=8)
+	pub_key = key.publickey().exportKey()
 
 	run = 1
 	while(run):
